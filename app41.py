@@ -132,11 +132,13 @@ selected_day = st.sidebar.selectbox("Select Day:", days)
 st.sidebar.subheader("📅 Weekly Filters")
 
 # Get available weeks (as dates)
+
+
 available_weeks = sorted(df['Week Start'].dropna().unique())
 selected_week_start = st.sidebar.selectbox("Select Week Starting (Monday):", available_weeks)
 
 # Office hours note
-st.sidebar.markdown("⏰ **Note:** Office hours are defined as 9 AM to 5 PM.")
+st.sidebar.markdown("⏰ **Note:** Office hours are defined as 9:00 AM to 5:00 PM.")
 
 # Set office hours
 start_time = pd.Timestamp("09:00").time()
