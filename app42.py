@@ -3,6 +3,8 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # Try to import openpyxl, and if it fails, show a user-friendly message
 try:
@@ -86,7 +88,14 @@ def load_data(folder_path):
     df['Week Start'] = df['Local Date'] - pd.to_timedelta(pd.to_datetime(df['Local Date']).dt.dayofweek, unit='d')
     df['Week Start'] = pd.to_datetime(df['Week Start']).dt.date
 
+    # Ensure 'People Presence' is binary
+    df['People Presence'] = df['People Presence'].astype(int)
+
     return df
+
+# Function to get unique floors
+def get_unique_floors(df):
+    return sorted(df['Floor Name'].dropna().unique())
 
 # Load the data from the 'Room Occupancy' folder
 df = load_data('Room Occupancy')
@@ -98,15 +107,42 @@ st.title("🏢 ABC Company - Winnipeg Office Room Occupancy")
 tab1, tab2 = st.tabs(["Daily Trends", "Weekly Trends"])
 
 # Sidebar for filters
-st.sidebar.header("🚪 Room Selection")
+st.sidebar.header("🏢 Floor and Room Selection")
 
-# Get unique room names ('Space Name' column)
-rooms = df['Space Name'].dropna().unique()
-selected_rooms = st.sidebar.multiselect("Select Rooms:", rooms)
+# Get unique floors
+floors = get_unique_floors(df)
 
-# Chart type selection
-st.sidebar.markdown("### 📊 Chart Type Selector")
-chart_type = st.sidebar.radio("Select Chart Type:", ["Bar", "Line", "Area", "Scatter"])
+# Use session state to store selected floors and rooms
+if 'selected_floors' not in st.session_state:
+    st.session_state.selected_floors = []
+if 'selected_rooms' not in st.session_state:
+    st.session_state.selected_rooms = []
+
+# Floor selection
+selected_floors = st.sidebar.multiselect("Select Floors:", floors, default=st.session_state.selected_floors)
+
+# Update selected floors in session state
+st.session_state.selected_floors = selected_floors
+
+# Get unique room names ('Space Name' column) based on selected floors
+if selected_floors:
+    available_rooms = df[df['Floor Name'].isin(selected_floors)]['Space Name'].dropna().unique()
+else:
+    available_rooms = df['Space Name'].dropna().unique()
+
+# Button to select all rooms on chosen floors
+if st.sidebar.button("Select All Rooms on Chosen Floors"):
+    st.session_state.selected_rooms = available_rooms.tolist()
+
+# Room selection
+selected_rooms = st.sidebar.multiselect(
+    "Select rooms manually:",
+    options=available_rooms,
+    default=st.session_state.selected_rooms
+)
+
+# Update selected rooms in session state
+st.session_state.selected_rooms = selected_rooms
 
 # Layout selection
 st.sidebar.markdown("### 🖥️ Layout Option")
@@ -163,68 +199,73 @@ def get_download_link(df_utilization, title, filename, key):
 qualitative_colors = px.colors.qualitative.Plotly
 color_map = {room: qualitative_colors[i % len(qualitative_colors)] for i, room in enumerate(selected_rooms)}
 
-# Function to create individual plots
-def create_individual_plots(filtered_dfs, time_labels, y_limit_upper, plot_type, x_label):
-    plots = []
-    for room, filtered_df in filtered_dfs.items():
-        if not filtered_df.empty:
-            # Reset index and rename columns for plotting
-            filtered_df = filtered_df.reset_index()
-            # Rename 'timestamp' to 'Time' if it exists
-            if 'timestamp' in filtered_df.columns:
-                filtered_df.rename(columns={'timestamp': 'Time'}, inplace=True)
-            else:
-                filtered_df.rename(columns={'index': 'Time'}, inplace=True)
+# Function to create heatmap for individual rooms
+def create_room_heatmap(room_data, room_name, x_label):
+    fig = go.Figure()
 
-            # Ensure 'Time' is in string format '%H:%M' or '%A'
-            if isinstance(filtered_df['Time'].iloc[0], pd.Timestamp):
-                if x_label == "Time":
-                    filtered_df['Time'] = filtered_df['Time'].dt.strftime('%H:%M')
-                else:
-                    filtered_df['Time'] = filtered_df['Time'].dt.strftime('%A')
-            else:
-                # Handle cases where 'Time' might already be a string but ensure proper formatting
-                filtered_df['Time'] = pd.to_datetime(filtered_df['Time'], errors='coerce').dt.strftime('%H:%M')
+    # Add heatmap trace
+    fig.add_trace(go.Heatmap(
+        z=[room_data.values],
+        x=room_data.index,
+        y=[room_name],
+        colorscale='YlOrRd',
+        showscale=False,
+        hoverongaps=False,
+        hovertemplate='Time: %{x}<br>Occupied: %{z}<extra></extra>'
+    ))
 
-            filtered_df = filtered_df.dropna(subset=['Time'])
+    # Update layout
+    fig.update_layout(
+        title=f'{room_name} Occupancy',
+        xaxis_title=x_label,
+        height=200,
+        xaxis=dict(
+            tickmode='array',
+            tickvals=room_data.index,
+            ticktext=[f"{h:02d}:00" for h in range(9, 18)] if x_label == "Time of Day" else ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+            tickangle=45
+        ),
+        yaxis=dict(showticklabels=False)
+    )
 
-            color = color_map[room]
-            if plot_type == "Bar":
-                fig = px.bar(filtered_df, x='Time', y='Peak People Count',
-                             title=f"{room}",
-                             labels={"Time": x_label, "Peak People Count": "Number of People"},
-                             template='plotly_white',
-                             color_discrete_sequence=[color])
-            elif plot_type == "Line":
-                fig = px.line(filtered_df, x='Time', y='Peak People Count',
-                              title=f"{room}",
-                              labels={"Time": x_label, "Peak People Count": "Number of People"},
-                              markers=True, template='plotly_white',
-                              color_discrete_sequence=[color])
-            elif plot_type == "Area":
-                fig = px.area(filtered_df, x='Time', y='Peak People Count',
-                              title=f"{room}",
-                              labels={"Time": x_label, "Peak People Count": "Number of People"},
-                              template='plotly_white',
-                              color_discrete_sequence=[color])
-            elif plot_type == "Scatter":
-                fig = px.scatter(filtered_df, x='Time', y='Peak People Count',
-                                 title=f"{room}",
-                                 labels={"Time": x_label, "Peak People Count": "Number of People"},
-                                 template='plotly_white',
-                                 color_discrete_sequence=[color])
-            else:
-                continue  # Skip if an unknown plot_type is passed
+    return fig
 
-            fig.update_layout(
-                xaxis=dict(tickmode='array', tickvals=time_labels, ticktext=time_labels),
-                yaxis=dict(range=[0, y_limit_upper]),
-                title_x=0.5,
-                hovermode='x unified'
-            )
-            fig.update_xaxes(tickangle=45)
-            plots.append(fig)
-    return plots
+# Function to create combined heatmap for all rooms
+def create_combined_heatmap(all_room_data, x_label):
+    fig = go.Figure()
+
+    # Add heatmap trace
+    fig.add_trace(go.Heatmap(
+        z=all_room_data.T.values,
+        x=all_room_data.index,
+        y=all_room_data.columns,
+        colorscale='YlOrRd',
+        showscale=True,
+        hoverongaps=False,
+        hovertemplate='Room: %{y}<br>Time: %{x}<br>Occupied: %{z}<extra></extra>'
+    ))
+
+    # Update layout
+    fig.update_layout(
+        title='Combined Room Occupancy',
+        xaxis_title=x_label,
+        yaxis_title='Rooms',
+        height=max(400, 50 * len(all_room_data.columns) + 100),  # Adjust height based on number of rooms
+        xaxis=dict(
+            tickmode='array',
+            tickvals=all_room_data.index,
+            ticktext=[f"{h:02d}:00" for h in range(9, 18)] if x_label == "Time of Day" else ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+            tickangle=45
+        ),
+        yaxis=dict(autorange="reversed"),  # To match the traditional heatmap orientation
+        coloraxis_colorbar=dict(
+            title='Occupancy',
+            tickvals=[0, 1],
+            ticktext=['Not Occupied', 'Occupied']
+        )
+    )
+
+    return fig
 
 # Determine number of columns based on layout option
 def get_num_columns():
@@ -252,8 +293,7 @@ with tab1:
                 (df['Space Name'] == room) &
                 (df['Local Date'] == selected_date)
             ]
-            # Resample and process data
-            hourly_occupancy = filtered_df.resample('H').max()
+            hourly_occupancy = filtered_df.resample('H')['People Presence'].max()
             hourly_occupancy = hourly_occupancy.between_time(start_time.strftime('%H:%M'),
                                                              end_time.strftime('%H:%M'))
             hourly_occupancy = hourly_occupancy.reindex(pd.date_range(
@@ -282,102 +322,25 @@ with tab1:
             time_labels = time_range.strftime('%H:%M')
 
             # Initialize variables
-            max_users = 0
             avg_utilization = {}
             utilization_records = {}
 
-            # Calculate the maximum number of users and average utilization
+            # Calculate utilization
             for room, hourly_occupancy in daily_filtered_dfs.items():
                 if not hourly_occupancy.empty:
-                    room_max = hourly_occupancy['Peak People Count'].max()
-                    max_users = max(max_users, room_max)
-                    avg_users = hourly_occupancy['Peak People Count'].mean()
-                    capacity = daily_capacities[room]
-                    if capacity > 0:
-                        utilization = (avg_users / capacity) * 100
-                        avg_utilization[room] = utilization
-                        utilization_records[room] = {'Room': room, 'Average Utilization (%)': utilization}
-                    else:
-                        avg_utilization[room] = 0
-                        st.warning(f"Capacity for {room} is zero. Utilization set to 0%.")
+                    utilization = (hourly_occupancy.sum() / len(hourly_occupancy)) * 100
+                    avg_utilization[room] = utilization
+                    utilization_records[room] = {'Room': room, 'Usage (%)': utilization}
 
-            # Round up the y-axis limit to the nearest ten
-            y_limit_upper = (int(max_users) // 10 + 1) * 10
-
-            # Create individual plots
-            plots = create_individual_plots(daily_filtered_dfs, time_labels, y_limit_upper, chart_type, "Time")
-
-            # Display plots based on layout option
-            num_cols = get_num_columns()
-            if num_cols > 1:
-                cols = st.columns(num_cols)
-                for idx, fig in enumerate(plots):
-                    with cols[idx % num_cols]:
-                        st.plotly_chart(fig, use_container_width=True)
-            else:
-                for fig in plots:
-                    st.plotly_chart(fig, use_container_width=True)
-
-            # Create combined Plotly graph
-            combined_fig = go.Figure()
-
-            for room, hourly_occupancy in daily_filtered_dfs.items():
-                hourly_occupancy = hourly_occupancy.reset_index()
-                hourly_occupancy.rename(columns={'index': 'Time'}, inplace=True)
-
-                # Ensure 'Time' is formatted correctly
-                hourly_occupancy['Time'] = hourly_occupancy['Time'].dt.strftime('%H:%M')
-
-                color = color_map[room]
-                if chart_type == "Bar":
-                    combined_fig.add_trace(go.Bar(
-                        x=hourly_occupancy['Time'],
-                        y=hourly_occupancy['Peak People Count'],
-                        name=room,
-                        marker_color=color,
-                        opacity=0.6
-                    ))
-                elif chart_type == "Line":
-                    combined_fig.add_trace(go.Scatter(
-                        x=hourly_occupancy['Time'],
-                        y=hourly_occupancy['Peak People Count'],
-                        mode='lines+markers',
-                        name=room,
-                        marker=dict(color=color),
-                        line=dict(width=2)
-                    ))
-                elif chart_type == "Area":
-                    combined_fig.add_trace(go.Scatter(
-                        x=hourly_occupancy['Time'],
-                        y=hourly_occupancy['Peak People Count'],
-                        mode='lines',
-                        name=room,
-                        fill='tozeroy',
-                        marker=dict(color=color),
-                        line=dict(width=2)
-                    ))
-                elif chart_type == "Scatter":
-                    combined_fig.add_trace(go.Scatter(
-                        x=hourly_occupancy['Time'],
-                        y=hourly_occupancy['Peak People Count'],
-                        mode='markers',
-                        name=room,
-                        marker=dict(color=color, size=8)
-                    ))
-
-            combined_fig.update_layout(
-                title="Combined Room Occupancy",
-                xaxis_title="Time",
-                yaxis_title="Number of People",
-                xaxis=dict(tickmode='array', tickvals=time_labels, ticktext=time_labels),
-                barmode='group' if chart_type == "Bar" else None,
-                yaxis=dict(range=[0, y_limit_upper]),
-                legend_title="Rooms",
-                template='plotly_white',
-                hovermode='x unified'
-            )
-            combined_fig.update_xaxes(tickangle=45)
+            # Create combined heatmap and display it at the top
+            combined_daily_data = pd.DataFrame(daily_filtered_dfs)
+            combined_fig = create_combined_heatmap(combined_daily_data, "Time of Day")
             st.plotly_chart(combined_fig, use_container_width=True)
+
+            # Create individual room heatmaps
+            for room, hourly_occupancy in daily_filtered_dfs.items():
+                fig = create_room_heatmap(hourly_occupancy, room, "Time of Day")
+                st.plotly_chart(fig, use_container_width=True)
 
             # Display average daily utilization
             utilization_text = "<div style='border: 2px solid #4CAF50; padding: 10px; border-radius: 10px; background-color: #f9f9f9;'>"
@@ -448,7 +411,7 @@ with tab2:
                 st.warning(f"No data available for {room} during office hours.")
                 continue
 
-            daily_occupancy = filtered_df.groupby(filtered_df.index.date)['Peak People Count'].max()
+            daily_occupancy = filtered_df.groupby(filtered_df.index.date)['People Presence'].max()
             daily_occupancy = daily_occupancy.to_frame()
 
             date_range = pd.date_range(start=selected_week_start_date, end=week_end_date, freq='D').date
@@ -478,102 +441,25 @@ with tab2:
             date_labels = date_range.strftime('%A')  # Day names
 
             # Initialize variables
-            max_users = 0
             avg_utilization = {}
             utilization_records_weekly = {}
 
-            # Calculate the maximum number of users and average utilization
+            # Calculate utilization
             for room, daily_occupancy in weekly_filtered_dfs.items():
                 if not daily_occupancy.empty:
-                    room_max = daily_occupancy['Peak People Count'].max()
-                    max_users = max(max_users, room_max)
-                    avg_users = daily_occupancy['Peak People Count'].mean()
-                    capacity = weekly_capacities[room]
-                    if capacity > 0:
-                        utilization = (avg_users / capacity) * 100
-                        avg_utilization[room] = utilization
-                        utilization_records_weekly[room] = {'Room': room, 'Average Utilization (%)': utilization}
-                    else:
-                        avg_utilization[room] = 0
-                        st.warning(f"Capacity for {room} is zero. Utilization set to 0%.")
+                    utilization = (daily_occupancy['People Presence'].sum() / len(daily_occupancy)) * 100
+                    avg_utilization[room] = utilization
+                    utilization_records_weekly[room] = {'Room': room, 'Usage (%)': utilization}
 
-            # Round up the y-axis limit to the nearest ten
-            y_limit_upper = (int(max_users) // 10 + 1) * 10
+            # Create combined heatmap and display it at the top
+            combined_weekly_data = pd.DataFrame(weekly_filtered_dfs)
+            combined_fig = create_combined_heatmap(combined_weekly_data, "Day of Week")
+            st.plotly_chart(combined_fig, use_container_width=True)
 
-            # Create individual plots
-            plots_weekly = create_individual_plots(weekly_filtered_dfs, date_labels, y_limit_upper, chart_type, "Day")
-
-            # Display plots based on layout option
-            num_cols = get_num_columns()
-            if num_cols > 1:
-                cols = st.columns(num_cols)
-                for idx, fig in enumerate(plots_weekly):
-                    with cols[idx % num_cols]:
-                        st.plotly_chart(fig, use_container_width=True)
-            else:
-                for fig in plots_weekly:
-                    st.plotly_chart(fig, use_container_width=True)
-
-            # Create combined Plotly graph
-            combined_fig_weekly = go.Figure()
-
+            # Create individual room heatmaps
             for room, daily_occupancy in weekly_filtered_dfs.items():
-                daily_occupancy = daily_occupancy.reset_index()
-                daily_occupancy.rename(columns={'index': 'Day'}, inplace=True)
-
-                # Ensure 'Day' is formatted correctly
-                daily_occupancy['Day'] = pd.to_datetime(daily_occupancy['Day']).dt.strftime('%A')
-
-                color = color_map[room]
-                if chart_type == "Bar":
-                    combined_fig_weekly.add_trace(go.Bar(
-                        x=daily_occupancy['Day'],
-                        y=daily_occupancy['Peak People Count'],
-                        name=room,
-                        marker_color=color,
-                        opacity=0.6
-                    ))
-                elif chart_type == "Line":
-                    combined_fig_weekly.add_trace(go.Scatter(
-                        x=daily_occupancy['Day'],
-                        y=daily_occupancy['Peak People Count'],
-                        mode='lines+markers',
-                        name=room,
-                        marker=dict(color=color),
-                        line=dict(width=2)
-                    ))
-                elif chart_type == "Area":
-                    combined_fig_weekly.add_trace(go.Scatter(
-                        x=daily_occupancy['Day'],
-                        y=daily_occupancy['Peak People Count'],
-                        mode='lines',
-                        name=room,
-                        fill='tozeroy',
-                        marker=dict(color=color),
-                        line=dict(width=2)
-                    ))
-                elif chart_type == "Scatter":
-                    combined_fig_weekly.add_trace(go.Scatter(
-                        x=daily_occupancy['Day'],
-                        y=daily_occupancy['Peak People Count'],
-                        mode='markers',
-                        name=room,
-                        marker=dict(color=color, size=8)
-                    ))
-
-            combined_fig_weekly.update_layout(
-                title="Combined Weekly Room Occupancy",
-                xaxis_title="Day",
-                yaxis_title="Number of People",
-                xaxis=dict(tickmode='array', tickvals=date_labels, ticktext=date_labels),
-                barmode='group' if chart_type == "Bar" else None,
-                yaxis=dict(range=[0, y_limit_upper]),
-                legend_title="Rooms",
-                template='plotly_white',
-                hovermode='x unified'
-            )
-            combined_fig_weekly.update_xaxes(tickangle=45)
-            st.plotly_chart(combined_fig_weekly, use_container_width=True)
+                fig = create_room_heatmap(daily_occupancy, room, "Day of Week")
+                st.plotly_chart(fig, use_container_width=True)
 
             # Display average weekly utilization
             utilization_text_weekly = "<div style='border: 2px solid #FF5722; padding: 10px; border-radius: 10px; background-color: #fff7f0;'>"
