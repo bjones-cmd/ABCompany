@@ -46,42 +46,30 @@ def convert_df_to_csv(df):
 # Load your data
 @st.cache_data
 def load_data(folder_path):
-    # Get all CSV files in the folder
-    all_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.csv')]
+    all_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.xlsx')]
     li = []
 
     for filename in all_files:
-        df = pd.read_csv(filename)
+        df = pd.read_excel(filename)
         li.append(df)
 
-    # Concatenate all dataframes
     df = pd.concat(li, axis=0, ignore_index=True)
 
-    # Ensure 'Local Date' and 'Local Time' are properly formatted
     df['Local Date'] = pd.to_datetime(df['Local Date'], format='%Y-%m-%d', errors='coerce')
     df['Local Time'] = pd.to_datetime(df['Local Time'], format='%H:%M:%S', errors='coerce').dt.time
 
-    # Combine 'Local Date' and 'Local Time' to create a timestamp
     df['timestamp'] = pd.to_datetime(df['Local Date'].dt.strftime('%Y-%m-%d') + ' ' + df['Local Time'].astype(str), errors='coerce')
 
-    # Check for any parsing errors in 'timestamp'
     if df['timestamp'].isnull().any():
-        st.warning("⚠️ Some timestamps couldn't be parsed and are set to 'NaT'. Please check your CSV files for consistency.")
+        st.warning("⚠️ Some timestamps couldn't be parsed and are set to 'NaT'. Please check your Excel files for consistency.")
 
-    # Set 'timestamp' as index
     df.set_index('timestamp', inplace=True)
-
-    # Convert 'Local Date' to date without time component
     df['Local Date'] = df['Local Date'].dt.date
 
-    # Check for any parsing errors in 'Local Date'
     if df['Local Date'].isnull().any():
-        st.warning("⚠️ Some 'Local Date' entries couldn't be parsed and are set to 'NaT'. Please check your CSV files for consistency.")
+        st.warning("⚠️ Some 'Local Date' entries couldn't be parsed and are set to 'NaT'. Please check your Excel files for consistency.")
 
-    # Calculate 'Week Start' as Monday of each week
     df['Week Start'] = df['Local Date'] - pd.to_timedelta(pd.to_datetime(df['Local Date']).dt.dayofweek, unit='d')
-
-    # Convert 'Week Start' to date
     df['Week Start'] = pd.to_datetime(df['Week Start']).dt.date
 
     return df
@@ -184,7 +172,6 @@ def create_individual_plots(filtered_dfs, time_labels, y_limit_upper, plot_type,
                 # Handle cases where 'Time' might already be a string but ensure proper formatting
                 filtered_df['Time'] = pd.to_datetime(filtered_df['Time'], errors='coerce').dt.strftime('%H:%M')
 
-            # Drop rows where 'Time' couldn't be parsed
             filtered_df = filtered_df.dropna(subset=['Time'])
 
             color = color_map[room]
@@ -438,29 +425,24 @@ with tab2:
 
             if filtered_df.empty:
                 st.warning(f"No data available for {room} in the selected week.")
-                continue  # Skip to the next room
+                continue
 
-            # Apply between_time BEFORE resampling
             filtered_df = filtered_df.between_time(start_time.strftime('%H:%M'),
                                                    end_time.strftime('%H:%M'))
 
-            # Check if filtered_df is empty after between_time
             if filtered_df.empty:
                 st.warning(f"No data available for {room} during office hours.")
-                continue  # Skip to the next room
+                continue
 
-            # Group by date and get max 'Peak People Count'
             daily_occupancy = filtered_df.groupby(filtered_df.index.date)['Peak People Count'].max()
             daily_occupancy = daily_occupancy.to_frame()
 
-            # Reindex to include all days in the week
             date_range = pd.date_range(start=selected_week_start_date, end=week_end_date, freq='D').date
             daily_occupancy = daily_occupancy.reindex(date_range, fill_value=0)
 
-            # Check if daily_occupancy is empty after processing
             if daily_occupancy.empty:
                 st.warning(f"No occupancy data available for {room} after processing.")
-                continue  # Skip to the next room
+                continue
 
             weekly_filtered_dfs[room] = daily_occupancy
 
@@ -505,49 +487,7 @@ with tab2:
             y_limit_upper = (int(max_users) // 10 + 1) * 10
 
             # Create individual plots
-            plots_weekly = []
-            for room, daily_occupancy in weekly_filtered_dfs.items():
-                if not daily_occupancy.empty:
-                    daily_occupancy = daily_occupancy.reset_index()
-                    daily_occupancy.rename(columns={'index': 'Day'}, inplace=True)
-
-                    # Ensure 'Day' is formatted correctly
-                    daily_occupancy['Day'] = pd.to_datetime(daily_occupancy['Day']).dt.strftime('%A')
-
-                    color = color_map[room]
-                    if chart_type == "Bar":
-                        fig = px.bar(daily_occupancy, x='Day', y='Peak People Count',
-                                     title=f"{room}",
-                                     labels={"Day": "Day", "Peak People Count": "Number of People"},
-                                     template='plotly_white',
-                                     color_discrete_sequence=[color])
-                    elif chart_type == "Line":
-                        fig = px.line(daily_occupancy, x='Day', y='Peak People Count',
-                                      title=f"{room}",
-                                      labels={"Day": "Day", "Peak People Count": "Number of People"},
-                                      markers=True, template='plotly_white',
-                                      color_discrete_sequence=[color])
-                    elif chart_type == "Area":
-                        fig = px.area(daily_occupancy, x='Day', y='Peak People Count',
-                                      title=f"{room}",
-                                      labels={"Day": "Day", "Peak People Count": "Number of People"},
-                                      template='plotly_white',
-                                      color_discrete_sequence=[color])
-                    elif chart_type == "Scatter":
-                        fig = px.scatter(daily_occupancy, x='Day', y='Peak People Count',
-                                         title=f"{room}",
-                                         labels={"Day": "Day", "Peak People Count": "Number of People"},
-                                         template='plotly_white',
-                                         color_discrete_sequence=[color])
-
-                    fig.update_layout(
-                        xaxis=dict(tickmode='array', tickvals=date_labels, ticktext=date_labels),
-                        yaxis=dict(range=[0, y_limit_upper]),
-                        title_x=0.5,
-                        hovermode='x unified'
-                    )
-                    fig.update_xaxes(tickangle=45)
-                    plots_weekly.append(fig)
+            plots_weekly = create_individual_plots(weekly_filtered_dfs, date_labels, y_limit_upper, chart_type, "Day")
 
             # Display plots based on layout option
             num_cols = get_num_columns()
