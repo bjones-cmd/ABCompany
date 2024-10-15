@@ -4,6 +4,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 
+# Try to import openpyxl, and if it fails, show a user-friendly message
+try:
+    import openpyxl
+except ImportError:
+    st.error("The openpyxl library is not installed. Please install it to read Excel files.")
+    st.stop()
+
 # Set Streamlit page configuration
 st.set_page_config(page_title="ABC Company - Winnipeg Office Room Occupancy", layout="wide")
 
@@ -43,15 +50,22 @@ st.markdown("""
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-# Load your data
+# Modify the load_data function to handle potential file reading errors
 @st.cache_data
 def load_data(folder_path):
     all_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.xlsx')]
     li = []
 
     for filename in all_files:
-        df = pd.read_excel(filename)
-        li.append(df)
+        try:
+            df = pd.read_excel(filename, engine='openpyxl')
+            li.append(df)
+        except Exception as e:
+            st.warning(f"Error reading file {filename}: {str(e)}")
+
+    if not li:
+        st.error("No valid Excel files could be read. Please check your data files.")
+        st.stop()
 
     df = pd.concat(li, axis=0, ignore_index=True)
 
