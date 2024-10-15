@@ -43,44 +43,103 @@ def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
 # Load your data
-@st.cache_data
-def load_data(file_path):
-    df = pd.read_csv(file_path)
-    
-    # Ensure 'Local Hour' and 'Local Minute' are integers
-    df['Local Hour'] = pd.to_numeric(df['Local Hour'], errors='coerce').astype('Int64')
-    df['Local Minute'] = pd.to_numeric(df['Local Minute'], errors='coerce').astype('Int64')
-    
-    # Combine and convert timestamp
-    df['timestamp'] = pd.to_datetime(
-        df['Local Date'].astype(str) + ' ' +
-        df['Local Hour'].astype(str).str.zfill(2) + ':' +
-        df['Local Minute'].astype(str).str.zfill(2),
-        format='%Y-%m-%d %H:%M',
-        errors='coerce'
-    )
-    
-    # Check for any parsing errors in 'timestamp'
-    if df['timestamp'].isnull().any():
-        st.warning("⚠️ Some timestamps couldn't be parsed and are set to 'NaT'. Please check your CSV file for consistency.")
-    
-    # Set 'timestamp' as index
-    df.set_index('timestamp', inplace=True)
-    
-    # Convert 'Local Date' to datetime.date (no time component)
-    df['Local Date'] = pd.to_datetime(df['Local Date'], format='%Y-%m-%d', errors='coerce').dt.date
-    
-    # Check for any parsing errors in 'Local Date'
-    if df['Local Date'].isnull().any():
-        st.warning("⚠️ Some 'Local Date' entries couldn't be parsed and are set to 'NaT'. Please check your CSV file for consistency.")
-    
-    # Calculate 'Week Start' as Monday of each week
-    df['Week Start'] = df['Local Date'] - pd.to_timedelta(pd.to_datetime(df['Local Date']).dt.dayofweek, unit='d')
-    
-    # Convert 'Week Start' to date
-    df['Week Start'] = pd.to_datetime(df['Week Start']).dt.date
-    
-    return df
+import pandas as pd
+import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
+import os
+from dotenv import load_dotenv
+import bcrypt
+
+# Load environment variables
+load_dotenv()
+
+# Authentication function
+def check_password():
+    """Returns `True` if the user had the correct password."""
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["password"] == st.secrets["password"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # don't store password
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # First run, show input for password.
+        st.text_input(
+            "Password", type="password", on_change=password_entered, key="password"
+        )
+        return False
+    elif not st.session_state["password_correct"]:
+        # Password incorrect, show input + error.
+        st.text_input(
+            "Password", type="password", on_change=password_entered, key="password"
+        )
+        st.error("😕 Password incorrect")
+        return False
+    else:
+        # Password correct.
+        return True
+
+# Only show the app if the password is correct
+if check_password():
+    # Your existing app code starts here
+    # Set Streamlit page configuration
+    st.set_page_config(page_title="ABC Company - Winnipeg Office", layout="wide")
+
+    # Apply custom CSS styles
+    st.markdown("""
+        <style>
+        /* Your existing CSS styles */
+        </style>
+        """, unsafe_allow_html=True)
+
+    @st.cache_data
+    def load_data(file_path):
+        df = pd.read_csv(file_path)
+        
+        # Ensure 'Local Hour' and 'Local Minute' are integers
+        df['Local Hour'] = pd.to_numeric(df['Local Hour'], errors='coerce').astype('Int64')
+        df['Local Minute'] = pd.to_numeric(df['Local Minute'], errors='coerce').astype('Int64')
+        
+        # Combine and convert timestamp
+        df['timestamp'] = pd.to_datetime(
+            df['Local Date'].astype(str) + ' ' +
+            df['Local Hour'].astype(str).str.zfill(2) + ':' +
+            df['Local Minute'].astype(str).str.zfill(2),
+            format='%Y-%m-%d %H:%M',
+            errors='coerce'
+        )
+        
+        # Check for any parsing errors in 'timestamp'
+        if df['timestamp'].isnull().any():
+            st.warning("⚠️ Some timestamps couldn't be parsed and are set to 'NaT'. Please check your CSV file for consistency.")
+        
+        # Set 'timestamp' as index
+        df.set_index('timestamp', inplace=True)
+        
+        # Convert 'Local Date' to datetime.date (no time component)
+        df['Local Date'] = pd.to_datetime(df['Local Date'], format='%Y-%m-%d', errors='coerce').dt.date
+        
+        # Check for any parsing errors in 'Local Date'
+        if df['Local Date'].isnull().any():
+            st.warning("⚠️ Some 'Local Date' entries couldn't be parsed and are set to 'NaT'. Please check your CSV file for consistency.")
+        
+        # Calculate 'Week Start' as Monday of each week
+        df['Week Start'] = df['Local Date'] - pd.to_timedelta(pd.to_datetime(df['Local Date']).dt.dayofweek, unit='d')
+        
+        # Convert 'Week Start' to date
+        df['Week Start'] = pd.to_datetime(df['Week Start']).dt.date
+        
+        return df
+
+    # Load the data
+    df = load_data('AlphaComWeekly_Cleaned.csv')
+
+    # Streamlit app
+    st.title("🏢 ABC Company - Winnipeg Office")
 
 # Load the data
 df = load_data('AlphaComWeekly_Cleaned.csv')
