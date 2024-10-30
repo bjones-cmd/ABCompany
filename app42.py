@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
-import ossns
+import os
 
 # Try to import openpyxl, and if it fails, show a user-friendly message
 try:
