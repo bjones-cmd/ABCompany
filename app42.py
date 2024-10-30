@@ -381,13 +381,6 @@ with tab2:
                 combined_fig = create_combined_heatmap(combined_weekly_data.fillna(0), "Day of Week")
                 st.plotly_chart(combined_fig, use_container_width=True)
 
-                # Individual room heatmaps
-                for room in selected_rooms:
-                    if room in combined_weekly_data.columns:
-                        room_data = combined_weekly_data[room].fillna(0)
-                        fig = create_room_heatmap(room_data, room, "Day of Week")
-                        st.plotly_chart(fig, use_container_width=True)
-
                 # Calculate weekly utilization
                 avg_utilization_weekly = {}
                 utilization_records_weekly = {}
