@@ -94,6 +94,73 @@ def load_data(folder_path):
 # Function to get unique floors
 def get_unique_floors(df):
     return sorted(df['Floor Name'].dropna().unique())
+# Function to create heatmap for individual rooms
+def create_room_heatmap(room_data, room_name, x_label):
+    fig = go.Figure()
+
+    # Add heatmap trace
+    fig.add_trace(go.Heatmap(
+        z=[room_data.values],
+        x=room_data.index,
+        y=[room_name],
+        colorscale='YlOrRd',
+        showscale=False,
+        hoverongaps=False,
+        hovertemplate='Time: %{x}<br>Occupied: %{z}<extra></extra>'
+    ))
+
+    # Update layout
+    fig.update_layout(
+        title=f'{room_name} Occupancy',
+        xaxis_title=x_label,
+        height=200,
+        xaxis=dict(
+            tickmode='array',
+            tickvals=room_data.index,
+            ticktext=[f"{h:02d}:00" for h in range(9, 18)] if x_label == "Time of Day" else ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+            tickangle=45
+        ),
+        yaxis=dict(showticklabels=False)
+    )
+
+    return fig
+
+# Function to create combined heatmap for all rooms
+def create_combined_heatmap(all_room_data, x_label):
+    fig = go.Figure()
+
+    # Add heatmap trace
+    fig.add_trace(go.Heatmap(
+        z=all_room_data.T.values,
+        x=all_room_data.index,
+        y=all_room_data.columns,
+        colorscale='YlOrRd',
+        showscale=True,
+        hoverongaps=False,
+        hovertemplate='Room: %{y}<br>Time: %{x}<br>Occupied: %{z}<extra></extra>'
+    ))
+
+    # Update layout
+    fig.update_layout(
+        title='Combined Room Occupancy',
+        xaxis_title=x_label,
+        yaxis_title='Rooms',
+        height=max(400, 50 * len(all_room_data.columns) + 100),  # Adjust height based on number of rooms
+        xaxis=dict(
+            tickmode='array',
+            tickvals=all_room_data.index,
+            ticktext=[f"{h:02d}:00" for h in range(9, 18)] if x_label == "Time of Day" else ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+            tickangle=45
+        ),
+        yaxis=dict(autorange="reversed"),  # To match the traditional heatmap orientation
+        coloraxis_colorbar=dict(
+            title='Occupancy',
+            tickvals=[0, 1],
+            ticktext=['Not Occupied', 'Occupied']
+        )
+    )
+
+    return fig
 
 # Load the data from the 'Room Occupancy' folder
 df = load_data('Room Occupancy')
@@ -167,7 +234,6 @@ days = sorted(pd.to_datetime(available_dates)[
     (pd.to_datetime(available_dates).month == selected_month)
 ].day.unique())
 selected_day = st.sidebar.selectbox("Select Day:", days)
-
 # Subheader for weekly filters
 st.sidebar.subheader("📅 Weekly Filters")
 
@@ -196,81 +262,6 @@ def get_download_link(df_utilization, title, filename, key):
 # Color mapping for rooms
 qualitative_colors = px.colors.qualitative.Plotly
 color_map = {room: qualitative_colors[i % len(qualitative_colors)] for i, room in enumerate(selected_rooms)}
-
-# Function to create heatmap for individual rooms
-def create_room_heatmap(room_data, room_name, x_label):
-    fig = go.Figure()
-
-    # Add heatmap trace
-    fig.add_trace(go.Heatmap(
-        z=[room_data.values],
-        x=room_data.index,
-        y=[room_name],
-        colorscale='YlOrRd',
-        showscale=False,
-        hoverongaps=False,
-        hovertemplate='Time: %{x}<br>Occupied: %{z}<extra></extra>'
-    ))
-
-    # Update layout
-    fig.update_layout(
-        title=f'{room_name} Occupancy',
-        xaxis_title=x_label,
-        height=200,
-        xaxis=dict(
-            tickmode='array',
-            tickvals=room_data.index,
-            ticktext=[f"{h:02d}:00" for h in range(9, 18)] if x_label == "Time of Day" else ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-            tickangle=45
-        ),
-        yaxis=dict(showticklabels=False)
-    )
-
-    return fig
-
-# Function to create combined heatmap for all rooms
-def create_combined_heatmap(all_room_data, x_label):
-    fig = go.Figure()
-
-    # Add heatmap trace
-    fig.add_trace(go.Heatmap(
-        z=all_room_data.T.values,
-        x=all_room_data.index,
-        y=all_room_data.columns,
-        colorscale='YlOrRd',
-        showscale=True,
-        hoverongaps=False,
-        hovertemplate='Room: %{y}<br>Time: %{x}<br>Occupied: %{z}<extra></extra>'
-    ))
-
-    # Update layout
-    fig.update_layout(
-        title='Combined Room Occupancy',
-        xaxis_title=x_label,
-        yaxis_title='Rooms',
-        height=max(400, 50 * len(all_room_data.columns) + 100),  # Adjust height based on number of rooms
-        xaxis=dict(
-            tickmode='array',
-            tickvals=all_room_data.index,
-            ticktext=[f"{h:02d}:00" for h in range(9, 18)] if x_label == "Time of Day" else ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-            tickangle=45
-        ),
-        yaxis=dict(autorange="reversed"),  # To match the traditional heatmap orientation
-        coloraxis_colorbar=dict(
-            title='Occupancy',
-            tickvals=[0, 1],
-            ticktext=['Not Occupied', 'Occupied']
-        )
-    )
-
-    return fig
-
-# Determine number of columns based on layout option
-def get_num_columns():
-    if layout_option == "Analyse":
-        return min(4, len(selected_rooms)) if len(selected_rooms) > 1 else 1
-    else:
-        return 1
 
 # Daily Trends Tab
 with tab1:
@@ -312,43 +303,46 @@ with tab1:
         if daily_filtered_dfs:
             if any(not df.empty for df in daily_filtered_dfs.values()):
                 try:
-                    combined_daily_data = pd.DataFrame(daily_filtered_dfs)
-                    combined_fig = create_combined_heatmap(combined_daily_data, "Time of Day")
-                    st.plotly_chart(combined_fig, use_container_width=True)
+                    # Create DataFrame with explicit index
+                    combined_daily_data = pd.DataFrame(daily_filtered_dfs).fillna(0)
+                    if not combined_daily_data.empty:
+                        combined_fig = create_combined_heatmap(combined_daily_data, "Time of Day")
+                        st.plotly_chart(combined_fig, use_container_width=True)
                     
-                    # Individual room heatmaps
-                    for room, hourly_occupancy in daily_filtered_dfs.items():
-                        if not hourly_occupancy.empty:
-                            fig = create_room_heatmap(hourly_occupancy, room, "Time of Day")
-                            st.plotly_chart(fig, use_container_width=True)
+                        # Individual room heatmaps
+                        for room, hourly_occupancy in daily_filtered_dfs.items():
+                            if not hourly_occupancy.empty:
+                                fig = create_room_heatmap(hourly_occupancy, room, "Time of Day")
+                                st.plotly_chart(fig, use_container_width=True)
 
-                    # Calculate and display utilization
-                    avg_utilization = {}
-                    utilization_records = {}
-                    for room, hourly_occupancy in daily_filtered_dfs.items():
-                        if not hourly_occupancy.empty:
-                            utilization = (hourly_occupancy.sum() / len(hourly_occupancy)) * 100
-                            avg_utilization[room] = utilization
-                            utilization_records[room] = {'Room': room, 'Usage (%)': utilization}
+                        # Calculate and display utilization
+                        avg_utilization = {}
+                        utilization_records = {}
+                        for room, hourly_occupancy in daily_filtered_dfs.items():
+                            if not hourly_occupancy.empty:
+                                utilization = (hourly_occupancy.sum() / len(hourly_occupancy)) * 100
+                                avg_utilization[room] = utilization
+                                utilization_records[room] = {'Room': room, 'Usage (%)': utilization}
 
-                    # Display utilization text and download button
-                    if avg_utilization:
-                        utilization_text = "<div style='border: 2px solid #4CAF50; padding: 10px; border-radius: 10px; background-color: #f9f9f9;'>"
-                        utilization_text += "<h3 style='color: #4CAF50;'>Average Daily Utilization</h3>"
-                        for room, utilization in avg_utilization.items():
-                            utilization_text += f"<p style='font-size: 18px; font-weight: bold; color: #333;'>{room}: {utilization:.2f}% utilized</p>"
-                        utilization_text += "</div>"
-                        st.markdown(utilization_text, unsafe_allow_html=True)
+                        # Display utilization text and download button
+                        if avg_utilization:
+                            utilization_text = "<div style='border: 2px solid #4CAF50; padding: 10px; border-radius: 10px; background-color: #f9f9f9;'>"
+                            utilization_text += "<h3 style='color: #4CAF50;'>Average Daily Utilization</h3>"
+                            for room, utilization in avg_utilization.items():
+                                utilization_text += f"<p style='font-size: 18px; font-weight: bold; color: #333;'>{room}: {utilization:.2f}% utilized</p>"
+                            utilization_text += "</div>"
+                            st.markdown(utilization_text, unsafe_allow_html=True)
 
-                        if utilization_records:
-                            df_utilization = pd.DataFrame(utilization_records.values())
-                            get_download_link(
-                                df_utilization,
-                                title="📄 Download Daily Utilization Data",
-                                filename="average_daily_utilization.csv",
-                                key='download_daily'
-                            )
-
+                            if utilization_records:
+                                df_utilization = pd.DataFrame(utilization_records.values())
+                                get_download_link(
+                                    df_utilization,
+                                    title="📄 Download Daily Utilization Data",
+                                    filename="average_daily_utilization.csv",
+                                    key='download_daily'
+                                )
+                    else:
+                        st.warning("No data available for visualization after processing.")
                 except ValueError as e:
                     st.warning("Unable to create visualizations. Please check if data is available for the selected criteria.")
                     st.error(f"Error details: {str(e)}")
@@ -356,8 +350,7 @@ with tab1:
                 st.warning("No occupancy data found for the selected criteria.")
         else:
             st.warning("No data available for the selected filters.")
-
-# Weekly Trends Tab
+            # Weekly Trends Tab
 with tab2:
     st.markdown("<h3 style='color: #4CAF50;'>Weekly Dashboard</h3>", unsafe_allow_html=True)
     st.write("This section displays weekly room occupancy trends.")
@@ -371,109 +364,85 @@ with tab2:
     # Define week end date as Friday (Monday to Friday)
     week_end_date = selected_week_start_date + pd.Timedelta(days=4)
 
-    # Check if selected week has data
-    if selected_week_start_date not in available_weeks:
+    if not selected_rooms:
+        st.warning("Please select at least one room to view occupancy data.")
+    elif selected_week_start_date not in available_weeks:
         st.warning(f"No data available for the week starting {selected_week_start_date}")
     else:
-        # Filter the DataFrame based on the selected week
-        weekly_filtered_dfs = {}
-        weekly_capacities = {}
+        # Create date range for the week
+        date_range = pd.date_range(start=selected_week_start_date, end=week_end_date, freq='D')
+        
+        # Initialize DataFrame with date range as index
+        combined_weekly_data = pd.DataFrame(index=date_range)
+        
+        # Fill data for each room
         for room in selected_rooms:
             filtered_df = df[
                 (df['Space Name'] == room) &
                 (df['Local Date'] >= selected_week_start_date) &
                 (df['Local Date'] <= week_end_date)
             ]
+            if not filtered_df.empty:
+                daily_occupancy = filtered_df.groupby('Local Date')['People Presence'].max()
+                combined_weekly_data[room] = daily_occupancy
 
-            if filtered_df.empty:
-                st.warning(f"No data available for {room} in the selected week.")
-                continue
+        # Continue with visualization if data exists
+        if not combined_weekly_data.empty:
+            try:
+                combined_fig = create_combined_heatmap(combined_weekly_data.fillna(0), "Day of Week")
+                st.plotly_chart(combined_fig, use_container_width=True)
 
-            filtered_df = filtered_df.between_time(start_time.strftime('%H:%M'),
-                                                   end_time.strftime('%H:%M'))
+                # Individual room heatmaps
+                for room in selected_rooms:
+                    if room in combined_weekly_data.columns:
+                        room_data = combined_weekly_data[room].fillna(0)
+                        fig = create_room_heatmap(room_data, room, "Day of Week")
+                        st.plotly_chart(fig, use_container_width=True)
 
-            if filtered_df.empty:
-                st.warning(f"No data available for {room} during office hours.")
-                continue
+                # Calculate weekly utilization
+                avg_utilization_weekly = {}
+                utilization_records_weekly = {}
+                
+                for room in selected_rooms:
+                    if room in combined_weekly_data.columns:
+                        room_data = combined_weekly_data[room].fillna(0)
+                        utilization = (room_data.sum() / len(room_data)) * 100
+                        avg_utilization_weekly[room] = utilization
+                        utilization_records_weekly[room] = {'Room': room, 'Usage (%)': utilization}
 
-            daily_occupancy = filtered_df.groupby(filtered_df.index.date)['People Presence'].max()
-            daily_occupancy = daily_occupancy.to_frame()
+                # Display weekly utilization
+                if avg_utilization_weekly:
+                    utilization_text_weekly = "<div style='border: 2px solid #FF5722; padding: 10px; border-radius: 10px; background-color: #fff7f0;'>"
+                    utilization_text_weekly += "<h3 style='color: #FF5722;'>Average Weekly Utilization</h3>"
+                    
+                    for room, utilization in avg_utilization_weekly.items():
+                        utilization_text_weekly += f"<p style='font-size: 18px; font-weight: bold; color: #333;'>{room}: {utilization:.2f}% utilized</p>"
+                    
+                    utilization_text_weekly += "</div>"
+                    st.markdown(utilization_text_weekly, unsafe_allow_html=True)
 
-            date_range = pd.date_range(start=selected_week_start_date, end=week_end_date, freq='D').date
-            daily_occupancy = daily_occupancy.reindex(date_range, fill_value=0)
+                    # Add download button for weekly utilization data
+                    if utilization_records_weekly:
+                        df_utilization_weekly = pd.DataFrame(utilization_records_weekly.values())
+                        get_download_link(
+                            df_utilization_weekly,
+                            title="📄 Download Weekly Utilization Data",
+                            filename="average_weekly_utilization.csv",
+                            key='download_weekly'
+                        )
 
-            if daily_occupancy.empty:
-                st.warning(f"No occupancy data available for {room} after processing.")
-                continue
-
-            weekly_filtered_dfs[room] = daily_occupancy
-
-            capacity_data = df.loc[df['Space Name'] == room, 'Space Capacity']
-            if not capacity_data.empty:
-                weekly_capacities[room] = capacity_data.values[0]
-            else:
-                st.warning(f"No capacity data available for {room}. Setting capacity to 0.")
-                weekly_capacities[room] = 0
-
-        # Proceed with plotting and analysis if there's data
-        if weekly_filtered_dfs:
-            # Create a date range for the selected week (Monday to Friday)
-            date_range = pd.date_range(
-                start=selected_week_start_date,
-                end=week_end_date,
-                freq='D'
-            )
-            date_labels = date_range.strftime('%A')  # Day names
-
-            # Initialize variables
-            avg_utilization = {}
-            utilization_records_weekly = {}
-
-            # Calculate utilization
-            for room, daily_occupancy in weekly_filtered_dfs.items():
-                if not daily_occupancy.empty:
-                    utilization = (daily_occupancy['People Presence'].sum() / len(daily_occupancy)) * 100
-                    avg_utilization[room] = utilization
-                    utilization_records_weekly[room] = {'Room': room, 'Usage (%)': utilization}
-
-            # Create combined heatmap and display it at the top
-            combined_weekly_data = pd.DataFrame(weekly_filtered_dfs)
-            combined_fig = create_combined_heatmap(combined_weekly_data, "Day of Week")
-            st.plotly_chart(combined_fig, use_container_width=True)
-
-            # Create individual room heatmaps
-            for room, daily_occupancy in weekly_filtered_dfs.items():
-                fig = create_room_heatmap(daily_occupancy, room, "Day of Week")
-                st.plotly_chart(fig, use_container_width=True)
-
-            # Display average weekly utilization
-            utilization_text_weekly = "<div style='border: 2px solid #FF5722; padding: 10px; border-radius: 10px; background-color: #fff7f0;'>"
-            utilization_text_weekly += "<h3 style='color: #FF5722;'>Average Weekly Utilization</h3>"
-
-            for room, utilization in avg_utilization.items():
-                utilization_text_weekly += f"<p style='font-size: 18px; font-weight: bold; color: #333;'>{room}: {utilization:.2f}% utilized</p>"
-
-            utilization_text_weekly += "</div>"
-            st.markdown(utilization_text_weekly, unsafe_allow_html=True)
-
-            # Add download button for weekly utilization data with distinct label and key
-            if utilization_records_weekly:
-                df_utilization_weekly = pd.DataFrame(utilization_records_weekly.values())
-                get_download_link(
-                    df_utilization_weekly,
-                    title="📄 Download Weekly Utilization Data",
-                    filename="average_weekly_utilization.csv",
-                    key='download_weekly'
-                )
-
-            # Style updates for the average weekly utilization box
-            st.markdown("""
-            <style>
-            div[data-testid="stMarkdownContainer"] {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                font-size: 16px;
-            }
-            </style>
-            """, unsafe_allow_html=True)
+            except ValueError as e:
+                st.warning("Unable to create visualizations. Please check if data is available for the selected criteria.")
+                st.error(f"Error details: {str(e)}")
         else:
-            st.warning("🚫 No data available after processing. Please adjust your filters.")
+            st.warning("No data available for the selected week and rooms.")
+
+# Style updates for the utilization boxes
+st.markdown("""
+<style>
+div[data-testid="stMarkdownContainer"] {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 16px;
+}
+</style>
+""", unsafe_allow_html=True)
