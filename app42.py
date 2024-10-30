@@ -303,12 +303,6 @@ with tab1:
                     if not combined_daily_data.empty:
                         combined_fig = create_combined_heatmap(combined_daily_data, "Time of Day")
                         st.plotly_chart(combined_fig, use_container_width=True)
-                    
-                        # Individual room heatmaps
-                        for room, hourly_occupancy in daily_filtered_dfs.items():
-                            if not hourly_occupancy.empty:
-                                fig = create_room_heatmap(hourly_occupancy, room, "Time of Day")
-                                st.plotly_chart(fig, use_container_width=True)
 
                         # Calculate and display utilization
                         avg_utilization = {}
