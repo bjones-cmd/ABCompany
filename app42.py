@@ -276,99 +276,37 @@ def get_num_columns():
 with tab1:
     st.markdown("<h3 style='color: #4CAF50;'>Daily Dashboard</h3>", unsafe_allow_html=True)
 
-    # Create selected date
-    selected_date = pd.Timestamp(year=selected_year, month=selected_month, day=selected_day).date()
-
-    # Check if selected date is available
-    if selected_date not in available_dates:
+    if not selected_rooms:
+        st.warning("Please select at least one room to view occupancy data.")
+    elif selected_date not in available_dates:
         st.warning(f"No data available for {selected_date}")
     else:
         # Filter the DataFrame based on user input for daily trends
         daily_filtered_dfs = {}
         daily_capacities = {}
-        for room in selected_rooms:
-            filtered_df = df[
-                (df['Space Name'] == room) &
-                (df['Local Date'] == selected_date)
-            ]
-            hourly_occupancy = filtered_df.resample('H')['People Presence'].max()
-            hourly_occupancy = hourly_occupancy.between_time(start_time.strftime('%H:%M'),
-                                                             end_time.strftime('%H:%M'))
-            hourly_occupancy = hourly_occupancy.reindex(pd.date_range(
-                start=pd.Timestamp.combine(selected_date, start_time),
-                end=pd.Timestamp.combine(selected_date, end_time),
-                freq='H'
-            ), fill_value=0)
-            daily_filtered_dfs[room] = hourly_occupancy
-            capacity_data = df.loc[df['Space Name'] == room, 'Space Capacity']
-            if not capacity_data.empty:
-                daily_capacities[room] = capacity_data.values[0]
+        
+        # ... your existing filtering code ...
+
+        # Safe DataFrame creation and visualization
+        if daily_filtered_dfs:
+            if any(not df.empty for df in daily_filtered_dfs.values()):
+                try:
+                    combined_daily_data = pd.DataFrame(daily_filtered_dfs)
+                    combined_fig = create_combined_heatmap(combined_daily_data, "Time of Day")
+                    st.plotly_chart(combined_fig, use_container_width=True)
+                    
+                    # Individual room heatmaps
+                    for room, hourly_occupancy in daily_filtered_dfs.items():
+                        if not hourly_occupancy.empty:
+                            fig = create_room_heatmap(hourly_occupancy, room, "Time of Day")
+                            st.plotly_chart(fig, use_container_width=True)
+                except ValueError as e:
+                    st.warning("Unable to create visualizations. Please check if data is available for the selected criteria.")
+                    st.error(f"Error details: {str(e)}")
             else:
-                st.warning(f"No capacity data available for {room}. Setting capacity to 0.")
-                daily_capacities[room] = 0
-
-        # Check if any filtered_df is empty
-        if all(filtered_df.empty for filtered_df in daily_filtered_dfs.values()):
-            st.warning("🚫 No data available for the selected filters.")
+                st.warning("No occupancy data found for the selected criteria.")
         else:
-            # Create a common set of timestamps for the selected date and time range
-            time_range = pd.date_range(
-                start=pd.Timestamp.combine(selected_date, start_time),
-                end=pd.Timestamp.combine(selected_date, end_time),
-                freq='H'
-            )
-            time_labels = time_range.strftime('%H:%M')
-
-            # Initialize variables
-            avg_utilization = {}
-            utilization_records = {}
-
-            # Calculate utilization
-            for room, hourly_occupancy in daily_filtered_dfs.items():
-                if not hourly_occupancy.empty:
-                    utilization = (hourly_occupancy.sum() / len(hourly_occupancy)) * 100
-                    avg_utilization[room] = utilization
-                    utilization_records[room] = {'Room': room, 'Usage (%)': utilization}
-
-            # Create combined heatmap and display it at the top
-            combined_daily_data = pd.DataFrame(daily_filtered_dfs)
-            combined_fig = create_combined_heatmap(combined_daily_data, "Time of Day")
-            st.plotly_chart(combined_fig, use_container_width=True)
-
-            # Create individual room heatmaps
-            for room, hourly_occupancy in daily_filtered_dfs.items():
-                fig = create_room_heatmap(hourly_occupancy, room, "Time of Day")
-                st.plotly_chart(fig, use_container_width=True)
-
-            # Display average daily utilization
-            utilization_text = "<div style='border: 2px solid #4CAF50; padding: 10px; border-radius: 10px; background-color: #f9f9f9;'>"
-            utilization_text += "<h3 style='color: #4CAF50;'>Average Daily Utilization</h3>"
-
-            for room, utilization in avg_utilization.items():
-                utilization_text += f"<p style='font-size: 18px; font-weight: bold; color: #333;'>{room}: {utilization:.2f}% utilized</p>"
-
-            utilization_text += "</div>"
-            st.markdown(utilization_text, unsafe_allow_html=True)
-
-            # Add download button for utilization data with distinct labels and keys
-            if utilization_records:
-                df_utilization = pd.DataFrame(utilization_records.values())
-                get_download_link(
-                    df_utilization,
-                    title="📄 Download Daily Utilization Data",
-                    filename="average_daily_utilization.csv",
-                    key='download_daily'
-                )
-
-            # Style updates for the average daily utilization box
-            st.markdown("""
-            <style>
-            div[data-testid="stMarkdownContainer"] {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                font-size: 16px;
-            }
-            </style>
-            """, unsafe_allow_html=True)
+            st.warning("No data available for the selected filters.") 
 
 # Weekly Trends Tab
 with tab2:
