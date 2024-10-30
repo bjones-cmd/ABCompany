@@ -135,7 +135,7 @@ def create_combined_heatmap(all_room_data, x_label):
         x=all_room_data.index,
         y=all_room_data.columns,
         colorscale='YlOrRd',
-        showscale=True,
+        showscale=False,
         hoverongaps=False,
         hovertemplate='Room: %{y}<br>Time: %{x}<br>Occupied: %{z}<extra></extra>'
     ))
@@ -145,19 +145,14 @@ def create_combined_heatmap(all_room_data, x_label):
         title='Combined Room Occupancy',
         xaxis_title=x_label,
         yaxis_title='Rooms',
-        height=max(400, 50 * len(all_room_data.columns) + 100),  # Adjust height based on number of rooms
+        height=max(400, 50 * len(all_room_data.columns) + 100),
         xaxis=dict(
             tickmode='array',
             tickvals=all_room_data.index,
             ticktext=[f"{h:02d}:00" for h in range(9, 18)] if x_label == "Time of Day" else ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
             tickangle=45
         ),
-        yaxis=dict(autorange="reversed"),  # To match the traditional heatmap orientation
-        coloraxis_colorbar=dict(
-            title='Occupancy',
-            tickvals=[0, 1],
-            ticktext=['Not Occupied', 'Occupied']
-        )
+        yaxis=dict(autorange="reversed")
     )
 
     return fig
