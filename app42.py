@@ -94,36 +94,6 @@ def load_data(folder_path):
 # Function to get unique floors
 def get_unique_floors(df):
     return sorted(df['Floor Name'].dropna().unique())
-# Function to create heatmap for individual rooms
-def create_room_heatmap(room_data, room_name, x_label):
-    fig = go.Figure()
-
-    # Add heatmap trace
-    fig.add_trace(go.Heatmap(
-        z=[room_data.values],
-        x=room_data.index,
-        y=[room_name],
-        colorscale='YlOrRd',
-        showscale=False,
-        hoverongaps=False,
-        hovertemplate='Time: %{x}<br>Occupied: %{z}<extra></extra>'
-    ))
-
-    # Update layout
-    fig.update_layout(
-        title=f'{room_name} Occupancy',
-        xaxis_title=x_label,
-        height=200,
-        xaxis=dict(
-            tickmode='array',
-            tickvals=room_data.index,
-            ticktext=[f"{h:02d}:00" for h in range(9, 18)] if x_label == "Time of Day" else ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-            tickangle=45
-        ),
-        yaxis=dict(showticklabels=False)
-    )
-
-    return fig
 
 # Function to create combined heatmap for all rooms
 def create_combined_heatmap(all_room_data, x_label):
